@@ -1,3 +1,5 @@
+from typing import Union
+
 from api_maker.dao.sql_generator import SQLGenerator
 from api_maker.dao.sql_select_generator import SQLSelectGenerator
 from api_maker.operation import Operation
@@ -52,7 +54,7 @@ class SQLSubselectGenerator(SQLSelectGenerator):
         return self.search_placeholders
 
     @property
-    def sql(self) -> str | None:
+    def sql(self) -> Union[str, None]:
         log.info(f"select_list: {self.select_list_columns}")
         if len(self.select_list_columns) == 1:  # then it only contains the key
             return None

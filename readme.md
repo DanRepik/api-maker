@@ -521,7 +521,7 @@ Additional configuration in the API specification document can incorporate these
 
 By default, these properties are not included in the result set. They must be explicitly selected in the request using the `__properties` metadata parameter. This allows for the specification of circular properties in the application API. For example, in the Chinook API, an invoice has a customer object property, and a customer, in turn, has an array of invoices property. In this case, services returning invoices can include the customer as a property, but that object will not include the invoices associated with the customer. Similarly, when selecting customers, the invoices associated with the customer can be included, but those invoices cannot contain a customer property.
 
-#### Object Properties
+##### Object Properties
 
 In OpenAPI specifications, object properties typically use a `$ref` attribute to reference the component schema object for the property. When the referenced schema object is part of the same database, API-Maker can automatically populate that property with additional configuration. Specifically, the keys that define the relationship must be identified. The following attributes allow configuring object properties:
 
@@ -542,7 +542,7 @@ customer:
 
 Note how the `x-am-parent-property` identifies the `customer_id` property to use as the key value for selecting the customer.
 
-#### Array of Object Properties
+##### Array of Object Properties
 
 Array properties allow the inclusion of lists of related records representing one-to-many relations within the database. Most of the setup for these properties uses standard OpenAPI conventions. Like object properties, these properties must reference a schema object accessing the same database.
 
@@ -662,6 +662,51 @@ When API-Maker accesses connection data in a secret, it expects a JSON string co
 
 # Deployment
 
+With the API specification and secrets in place, it is time to run API-Maker's deployment and provision the API infrastructure.
+
+> Currently, only deployments using Pulumi are supported.
+
+## Pulumi
+
+When using Pulumi for deployments, the `APIMaker` class is used. This class is a Pulumi component resource, so the Pulumi API conventions are in place.
+
+### Pulumi Component Resource API
+
+Pulumi component resources allow you to define and manage cloud infrastructure components as reusable units. The `APIMaker` class leverages this capability to simplify the deployment process for your API infrastructure.  Additionally this allows the application API to be part of larger deployments.
+
+### Example
+
+Here's an example of how to use the `APIMaker` class to deploy your API:
+
+```python
+import json
+from api_maker.iac.pulumi.api_maker import APIMaker
+
+api_maker = APIMaker(
+    "chinook_postgres",
+    props={
+        "api_spec": "./chinook_api.yaml",
+        "secrets": json.dumps({"chinook": "postgres/chinook"}),
+    },
+)
+```
+
+In this example:
+- `chinook_postgres` is the name of the component resource.
+- `props` is a dictionary containing the properties required for the deployment:
+  - `api_spec`: The path to your OpenAPI specification file.
+  - `secrets`: A JSON string mapping database names (as used in the `x-am-database` attribute) to their corresponding AWS Secrets Manager secret names.
+
+By following these steps, you can deploy your API infrastructure using API-Maker and Pulumi.
+
+The following properties can be specified;
+
+| property | Description | Usage |
+|----------|-------------|-------|
+| api_spec | The path to the API specification for the API. | Required |
+| secrets  | A JSON string mapping database names (as used in the `x-am-database` attribute) to their corresponding AWS Secrets Manager secret names. | Required |
+
+
 # Reference
 
 ## API Definition
@@ -675,7 +720,6 @@ These attributes map the componnent object to a database table.
 | Attribute | Description | Usage |
 |-------|--------|---------|
 | x-am-database | The name of the database where the table is located.   | Required, value is used to access database configuration from the runtime secrets map. |
-| x-am-engine | The type of database being accessed. Determines SQL dilect to use.  | Required, must be one of 'postgres', 'oracle' or 'mysql' |
 | x-am-table | The table name to perform the operations on. | Optional, defaults to schema component object name if not provided.  Must be a valid table name |
 | x-am-concurency-control | The name of the property
 
@@ -686,125 +730,8 @@ These attributes map the componnent object to a database table.
 | x-am-column-name      | Specifies the database column name if it differs from the property name.                                | Optional                                                                                |
 | x-am-primary-key      | Indicates that this property serves as the primary key for the object and defines how the key is obtained. | Required; must be one of the following: manual, auto, or sequence.                       |
 | x-am-sequence-name    | Specifies the database sequence to be used for generating primary keys.                                     | Required only when the primary key type is "sequence".                                    |
-#### Schema Component Object Associations
-
-When defining the api using schema objects the Open API specication allows properties that can be either objects or array of objects in addition to the other basic types.  With additional custom attributes API-Maker can populate these properties saving the client application the need to make multiple requests to construct objects with these properties.
-
-**Including an Object Property**
-
-Consider the following api spec;
-
-```yaml
-components:
-  schemas:
-    customer:
-      type: object
-      x-am-engine: postgres
-      x-am-database: chinook
-      properties:
-        customer_id:
-          type: integer
-          x-am-primary-key: auto
-        company:
-          type: string
-          maxLength: 80
-    invoice:
-      type: object
-      x-am-engine: postgres
-      x-am-database: chinook
-      properties:
-        invoice_id:
-          type: integer
-          x-am-primary-key: auto
-        customer_id:
-          type: integer
-        customer:
-          $ref: '#/components/schemas/customer'
-          x-am-parent-property: customer_id
-```
-
-In this example, the `customer` property of the `invoice` schema is an object type after reference resolution. By setting the `x-am-parent-property` attribute to a sibling property, API-Maker will use the value of that property to resolve the object value. Specifically, in this example, the `customer_id` value of the invoice will be used to select the corresponding customer.
-
-> Internally API-Maker uses inner joins to select these objects using a single database operation.
-
-**Including an Array Propety**
-
-
-Consider the following api spec:
-```
-    invoice:
-      type: object
-      x-am-engine: postgres
-      x-am-database: chinook
-      properties:
-        invoice_id:
-          type: integer
-          x-am-primary-key: auto
-        line_items:
-          type: array
-          items:
-            $ref: "#/components/schemas/invoice_line"
-            x-am-child-property: invoice_id
-    invoice_line:
-      type: object
-      x-am-engine: postgres
-      x-am-database: chinook
-      properties:
-        invoice_line_id:
-          type: integer
-          x-am-primary-key: auto
-        invoice_id:
-          type: integer
-        track_id:
-          type: integer
-```
-
-In this example, the `line_items` property of the `invoice` schema is an array of `invoice_lines` type after reference resolution.  By setting the `x-am-child-property` attribute to a property in the `invoice_line` schema, API-Maker will use the primary key value of the invoice to select on that property.  Specifically, in this example, the `invoice_id` values from the selected `invoice`s will be used to filter on the `invoice_id` property of the associated `invoice_line` items.
-
-
-| Attribute             | Description                                          | Usage             |
-|-----------------------|------------------------------------------------------|-------------------|
-| x-am-parent-property  | The name of the 'primary' property that identifies the selection key.  | Optional, defaults to `parent` primary key.  Normally needed for 1:1 associations. |
-| x-am-child-property   | The name of the property in the `secondary` object used as the selection key | Optional, defaults to primary key of  defaults to the child if not specified |
-
-##### One-to-One Associations
-
-When defining an association property for a one-to-one (1:1) association, the associated schema component can be included as a property of the object being returned.
-
-In the Chinook database, an example of this type of association can be found in the `invoice` table, where the `customer_id` serves as a foreign key referencing the customer record.
-
-In the schema component object model, this relationship can be specified, allowing the resultant invoice objects to have a `customer` property containing a customer object.
-
-
-Here's an example of how the `customer` property would be specified in the `invoice` schema component object;
-
-
-    invoice:
-      type: object
-      x-am-engine: postgres
-      x-am-database: chinook
-      properties:
-        invoice_id:
-          type: integer
-          x-am-primary-key: auto
-        customer_id:
-          type: integer
-        customer:
-          x-am-type: relation
-          x-am-schema-object: customer
-          x-am-parent-property: customer_id
-
-In this example the `customer` property type is specified as being a relation to the schema component object `customer'.  When fetching data API-Make will then use
-
-With API-Maker
-
-| Attribute | | Description |
-|-----------|-|-------------|
-| x-am-schema | Required | The name of the schema component object to use as the source of the relation. |
-| x-am-cardinality | Optional | Can be either single or multiple, defaults to single |
-| x-am-parent-property | Required | The name of the sibling property to use as the selection key in the relation |
-| x-am-child-property | Optional |
-
+| x-am-parent-property  | The name of the property that identifies the selection key used to obtain the value for a object property.  | Optional, defaults to primary key property.  Normally needed when specifying object properties. |
+| x-am-child-property   | The name of the property in the referenced object to use as the selection key for selecting an array of objects. | Optional, defaults to primary key of the child if not specified.  Normally needed when specifying array of objects relations. |
 
 # Appendix
 

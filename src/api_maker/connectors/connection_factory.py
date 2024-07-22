@@ -94,7 +94,7 @@ class ConnectionFactory:
             log.info(f"endpoint_url: {endpoint_url}")
             secretsmanager = boto3.client(
                 "secretsmanager",
-                #                endpoint_url=endpoint_url,
+                endpoint_url=endpoint_url,
             )
 
         # Get the secret value from AWS Secrets Manager

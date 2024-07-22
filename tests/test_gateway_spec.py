@@ -1,7 +1,6 @@
 import pytest
-import json
-from api_maker.utils.model_factory import ModelFactory, SchemaObject
-from api_maker.utils.logger import logger
+from api_maker.utils.model_factory import ModelFactory
+from api_maker.utils.logger import logger, write_logging_file
 
 from api_maker.iac.gateway_spec import GatewaySpec
 
@@ -95,6 +94,22 @@ def test_gateway_spec_operations(setup_model_factory):
     assert f"/{schema_name.lower()}" in gateway_spec.api_spec["paths"]
     assert "get" in gateway_spec.api_spec["paths"][f"/{schema_name.lower()}"]
     assert "post" in gateway_spec.api_spec["paths"][f"/{schema_name.lower()}"]
+
+
+def test_gateway_spec():
+    ModelFactory.load_yaml("./examples/pulumi_cdk/chinook-postgres/chinook_api.yaml")
+    function_name = "test_function"
+    function_invoke_arn = "arn:aws:lambda:us-east-1:000000000000:function:test_function"
+    gateway_spec = GatewaySpec(
+        function_name=function_name,
+        function_invoke_arn=function_invoke_arn,
+        enable_cors=True,
+    )
+    write_logging_file("test-gateway-doc.yaml", gateway_spec.as_yaml())
+
+    api_spec_yaml = gateway_spec.as_yaml()
+    assert isinstance(api_spec_yaml, str)
+    assert "testschema" in api_spec_yaml
 
 
 if __name__ == "__main__":

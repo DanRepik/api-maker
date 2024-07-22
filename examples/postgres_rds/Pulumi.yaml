@@ -1,0 +1,10 @@
+name: postgres_rds
+runtime:
+  name: python
+  options:
+    virtualenv: venv
+description: Deploys postgres RDS instance
+config:
+  pulumi:tags:
+    value:
+      pulumi:template: aws-python

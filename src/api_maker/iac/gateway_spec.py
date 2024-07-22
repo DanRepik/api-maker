@@ -11,8 +11,16 @@ from api_maker.utils.model_factory import (
 )
 from api_maker.utils.logger import logger
 
-
 log = logger(__name__)
+
+
+def remove_non_alphanumeric(text: str) -> str:
+    return re.sub(r"[^a-zA-Z0-9]", "", text)
+
+
+class NoAliasDumper(yaml.SafeDumper):
+    def ignore_aliases(self, data):
+        return True
 
 
 class GatewaySpec:
@@ -29,19 +37,21 @@ class GatewaySpec:
         document = ModelFactory.spec
 
         self.api_spec = dict(self.remove_custom_attributes(copy.deepcopy(document)))
+        self.fix_schema_names()
         if enable_cors:
             self.enable_cors()
 
         for schema_name in ModelFactory.get_schema_names():
+            fixed_schema_name = remove_non_alphanumeric(schema_name)
             self.generate_crud_operations(
-                schema_name, ModelFactory.get_schema_object(schema_name)
+                fixed_schema_name, ModelFactory.get_schema_object(schema_name)
             )
 
     def as_json(self):
         return json.dumps(self.api_spec)
 
     def as_yaml(self):
-        return yaml.dump(self.api_spec, default_flow_style=False)
+        return yaml.dump(self.api_spec, Dumper=NoAliasDumper, default_flow_style=False)
 
     def remove_custom_attributes(self, obj):
         return self.remove_attributes(obj, "^x-am-.*$")
@@ -68,6 +78,55 @@ class GatewaySpec:
         else:
             return obj
 
+    def fix_schema_names(self):
+        if "components" in self.api_spec and "schemas" in self.api_spec["components"]:
+            schemas = self.api_spec["components"]["schemas"]
+            fixed_schemas = {}
+            name_mapping = {}
+            for schema_name, schema_obj in schemas.items():
+                fixed_name = remove_non_alphanumeric(schema_name)
+                fixed_schemas[fixed_name] = schema_obj
+                name_mapping[schema_name] = fixed_name
+
+            self.api_spec["components"]["schemas"] = fixed_schemas
+            self.fix_references(self.api_spec, name_mapping)
+
+    def fix_references(self, obj, name_mapping):
+        if isinstance(obj, dict):
+            for key, value in obj.items():
+                if isinstance(value, str) and value.startswith("#/components/schemas/"):
+                    original_name = value.split("/")[-1]
+                    if original_name in name_mapping:
+                        obj[key] = f"#/components/schemas/{name_mapping[original_name]}"
+                else:
+                    self.fix_references(value, name_mapping)
+        elif isinstance(obj, list):
+            for item in obj:
+                self.fix_references(item, name_mapping)
+
+    def remove_object_or_array_types(self, d):
+        """
+        Recursively remove items from the dictionary where the value
+        of 'type' is 'object' or 'array'.
+
+        Args:
+        d (dict): The input dictionary to process.
+
+        Returns:
+        dict: The processed dictionary with the specified items removed.
+        """
+        # Create a new dictionary to avoid modifying the input dictionary directly
+        filtered_dict = {}
+        for key, value in d.items():
+            # Check if the value is a dictionary and has a 'type'
+            # key with value 'object' or 'array'
+            if isinstance(value, dict) and value.get("type") in ["object", "array"]:
+                continue
+            else:
+                filtered_dict[key] = value
+
+        return self.remove_custom_attributes(filtered_dict)
+
     def add_custom_authentication(self, authentication_invoke_arn: str):
         components = self.api_spec.get("components", None)
         if components:
@@ -93,6 +152,9 @@ class GatewaySpec:
             "type": "aws_proxy",
             "uri": self.function_invoke_arn,
             "httpMethod": "POST",
+            "responses": {"default": {"statusCode": "200"}},
+            "passthroughBehavior": "when_no_match",
+            "payloadFormatVersion": "1.0",
         }
 
         self.api_spec.setdefault("paths", {}).setdefault(path, {})[method] = operation
@@ -102,25 +164,21 @@ class GatewaySpec:
             "/{proxy+}",
             "options",
             {
-                "consumes": ["application/json"],
-                "produces": ["application/json"],
                 "responses": {
                     "200": {
                         "description": "200 response",
-                        "schema": {
-                            "type": "object",
-                        },
                         "headers": {
                             "Access-Control-Allow-Origin": {
-                                "type": "string",
+                                "schema": {"type": "string"}
                             },
                             "Access-Control-Allow-Methods": {
-                                "type": "string",
+                                "schema": {"type": "string"}
                             },
                             "Access-Control-Allow-Headers": {
-                                "type": "string",
+                                "schema": {"type": "string"}
                             },
                         },
+                        "content": {},
                     },
                 },
                 "x-amazon-apigateway-integration": {
@@ -128,19 +186,16 @@ class GatewaySpec:
                         "default": {
                             "statusCode": "200",
                             "responseParameters": {
-                                "method.response.header.Access-Control-Allow-Methods": "'DELETE,GET,HEAD,OPTIONS,PATCH,POST,PUT'",  # noqa: E501
-                                "method.response.header.Access-Control-Allow-Headers": "'Content-Type,Authorization,X-Amz-Date,X-Api-Key,X-Amz-Security-Token'",  # noqa: E501
-                                "method.response.header.Access-Control-Allow-Origin": "'*'",  # noqa: E501
+                                "method.response.header.Access-Control-Allow-Methods": "'DELETE,GET,HEAD,OPTIONS,PATCH,POST,PUT'",  # noqa E501
+                                "method.response.header.Access-Control-Allow-Headers": "'Content-Type,Authorization,X-Amz-Date,X-Api-Key,X-Amz-Security-Token'",  # noqa E501
+                                "method.response.header.Access-Control-Allow-Origin": "'*'",  # noqa E501
                             },
                             "responseTemplates": {
                                 "application/json": "",
                             },
                         },
                     },
-                    "requestTemplates": {
-                        "application/json": '{{"statusCode": 200}}',
-                    },
-                    "passthroughBehavior": "when_no_match",
+                    "passthroughBehavior": "never",
                     "type": "mock",
                 },
             },
@@ -205,29 +260,26 @@ class GatewaySpec:
 
     def generate_query_parameters(self, schema_object: SchemaObject):
         parameters = []
-        for (
-            property_name,
-            property_details,
-        ) in schema_object.properties.items():
+        for property_name, property_details in schema_object.properties.items():
             parameter = {
                 "in": "query",
                 "name": property_name,
                 "required": False,
                 "schema": {
                     "type": property_details.type,
-                    "pattern": self.generate_regex(property_details),
-                },  # Assuming default type is string
+                },
                 "description": f"Filter by {property_name}",
             }
             parameters.append(parameter)
         return parameters
 
     def __list_of_schema(self, schema_name: str):
+        fixed_schema_name = remove_non_alphanumeric(schema_name)
         return {
             "application/json": {
                 "schema": {
                     "type": "array",
-                    "items": {"$ref": f"#/components/schemas/{schema_name}"},
+                    "items": {"$ref": f"#/components/schemas/{fixed_schema_name}"},
                 }
             }
         }
@@ -247,9 +299,6 @@ class GatewaySpec:
     def generate_create_operation(
         self, path: str, schema_name: str, schema_object: SchemaObject
     ):
-        log.debug(
-            f"schema_name: {schema_name}, schema_object: {schema_object.schema_object}"
-        )
         self.add_operation(
             path,
             "post",
@@ -261,7 +310,7 @@ class GatewaySpec:
                         "application/json": {
                             "schema": {
                                 "type": "object",
-                                "properties": self.remove_custom_attributes(
+                                "properties": self.remove_object_or_array_types(
                                     schema_object.schema_object["properties"]
                                 ),
                                 "required": schema_object.required,
@@ -318,7 +367,7 @@ class GatewaySpec:
                     }
                 ],
                 "responses": {
-                    "200": {
+                    200: {
                         "description": f"A list of {schema_name}.",
                         "content": self.__list_of_schema(schema_name),
                     }
@@ -357,7 +406,7 @@ class GatewaySpec:
                         "application/json": {
                             "schema": {
                                 "type": "object",
-                                "properties": self.remove_custom_attributes(
+                                "properties": self.remove_object_or_array_types(
                                     schema_object.schema_object["properties"]
                                 ),
                                 "required": [],  # No properties are marked as required
@@ -415,7 +464,7 @@ class GatewaySpec:
                         "application/json": {
                             "schema": {
                                 "type": "object",
-                                "properties": self.remove_custom_attributes(
+                                "properties": self.remove_object_or_array_types(
                                     schema_object.schema_object["properties"]
                                 ),
                                 "required": [],
@@ -451,7 +500,7 @@ class GatewaySpec:
                         "application/json": {
                             "schema": {
                                 "type": "object",
-                                "properties": self.remove_custom_attributes(
+                                "properties": self.remove_object_or_array_types(
                                     schema_object.schema_object["properties"]
                                 ),
                                 "required": [],
@@ -467,8 +516,6 @@ class GatewaySpec:
                 },
             },
         )
-
-        # Delete operation
 
     def generate_delete_with_cc_operation(
         self, path: str, schema_name: str, schema_object: SchemaObject
@@ -566,20 +613,3 @@ class GatewaySpec:
                 },
             },
         )
-
-    def transform_schemas(self, spec_dict):
-        for component_name, component_data in (
-            spec_dict.get("components", {}).get("schemas", {}).items()
-        ):
-            # Remove attributes that start with 'x-am'
-            attributes_to_remove = [
-                key for key in component_data if key.startswith("x-am")
-            ]
-            for attribute in attributes_to_remove:
-                component_data.pop(attribute)
-
-            # Add new custom attributes
-            component_data["x-new-attribute1"] = "value1"
-            component_data["x-new-attribute2"] = "value2"
-
-        return spec_dict

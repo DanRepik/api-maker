@@ -1,3 +1,5 @@
+from typing import Union
+
 from api_maker.dao.sql_delete_generator import SQLDeleteGenerator
 from api_maker.dao.sql_insert_generator import SQLInsertGenerator
 from api_maker.dao.sql_select_generator import SQLSelectGenerator
@@ -49,7 +51,7 @@ class OperationDAO(DAO):
             400, f"Invalid operation action: {self.operation.action}"
         )
 
-    def execute(self, cursor: Cursor) -> list[dict] | dict:
+    def execute(self, cursor: Cursor) -> Union[list[dict], dict]:
         """
         Execute the database operation based on the provided cursor.
 
