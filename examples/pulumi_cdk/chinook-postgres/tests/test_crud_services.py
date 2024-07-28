@@ -2,6 +2,7 @@ from datetime import datetime
 import json
 import os
 import requests
+import pytest
 
 from api_maker.utils.app_exception import ApplicationException
 from api_maker.utils.logger import logger
@@ -12,6 +13,7 @@ log = logger(__name__)
 
 
 class TestCrudService:
+    @pytest.mark.quick
     def test_crud_service(self, gateway_endpoint):
         """
         Integration test to check basic crud services.  Media type does not have
@@ -19,60 +21,68 @@ class TestCrudService:
         """
         # test insert/create
         # Send the POST request
+        log.debug(f"endpoint: {gateway_endpoint}/media_type")
         response = requests.post(
             gateway_endpoint + "/media_type",
             headers={"Content-Type": "application/json"},
-            json={"media_type_id": 9000, "name": "X-Ray"},
+            json={"name": "X-Ray"},
         )
         assert response.status_code == 200
 
         result = json.loads(response.text)
-        log.info(f"result: {result}")
+        log.info(f"post result: {result}")
 
         assert result[0]["name"] == "X-Ray"
+        media_type_id = result[0]["media_type_id"]
 
         # test select/read
-        response = requests.get(gateway_endpoint + "/media_type?media_type_id=9000")
+        response = requests.get(
+            f"{gateway_endpoint}/media_type?media_type_id={media_type_id}"
+        )
         assert response.status_code == 200
 
         result = json.loads(response.text)
-        log.info(f"result: {result}")
+        log.info(f"get result: {result}")
 
-        assert result[0]["media_type_id"] == 9000
+        assert result[0]["media_type_id"] == media_type_id
         assert result[0]["name"] == "X-Ray"
 
         # test update
         response = requests.put(
-            gateway_endpoint + "/media_type?media_type_id=9000",
+            f"{gateway_endpoint}/media_type?media_type_id={media_type_id}",
             headers={"Content-Type": "application/json"},
             json={"name": "Ray Gun"},
         )
         assert response.status_code == 200
 
         result = json.loads(response.text)
-        log.info(f"result: {result}")
+        log.info(f"put result: {result}")
 
         assert len(result) == 1
         assert result[0]["name"] == "Ray Gun"
 
         # test delete
-        response = requests.delete(gateway_endpoint + "/media_type?media_type_id=9000")
+        response = requests.delete(
+            f"{gateway_endpoint}/media_type?media_type_id={media_type_id}"
+        )
 
         assert response.status_code == 200
 
         result = json.loads(response.text)
-        log.info(f"result: {result}")
+        log.info(f"delete result: {result}")
 
         assert len(result) == 1
-        assert result[0]["media_type_id"] == 9000
+        assert result[0]["media_type_id"] == media_type_id
         assert result[0]["name"] == "Ray Gun"
 
         # test select/read
-        response = requests.get(gateway_endpoint + "/media_type?media_type_id=9000")
+        response = requests.get(
+            f"{gateway_endpoint}/media_type?media_type_id={media_type_id}"
+        )
         assert response.status_code == 200
 
         result = json.loads(response.text)
-        log.info(f"result: {result}")
+        log.info(f"get after delete result: {result}")
 
         assert len(result) == 0
 

@@ -40,5 +40,6 @@ def get_stack_output_value(stack_name: str, work_dir: str, output_name: str):
 
 @pytest.fixture
 def gateway_endpoint():
-    api_id = get_stack_output_value("local", ".", "gateway-api")  # "nt5zecklg7"
+    api_id = get_stack_output_value("local", ".", "gateway_api")  # "nt5zecklg7"
+    print(f"api_id: {api_id}")
     return f"http://{api_id}.execute-api.localhost.localstack.cloud:4566/dev"

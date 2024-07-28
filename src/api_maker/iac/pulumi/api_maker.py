@@ -34,12 +34,23 @@ class APIMaker(pulumi.ComponentResource):
 
         self.function_name = f"{self.name}-api-maker"
 
-        lambda_function = self.deploy_lambda()
-        lambda_function.invoke_arn.apply(
-            lambda invoke_arn: self.deploy_gateway(invoke_arn)
+        self.lambda_function = self.deploy_lambda()
+        self.gateway = self.lambda_function.invoke_arn.apply(self.deploy_gateway)
+        self.stage = self.deploy_stage()
+
+        # Directly use the stage's invoke_url for endpoint_url
+        self.endpoint_url = self.stage.invoke_url
+        if os.environ.get("AWS_PROFILE") == "localstack":
+            self.endpoint_url = self.gateway.id.apply(
+                lambda gateway_id: f"http://localhost:4566/restapis/{gateway_id}/dev/_user_request_"
+            )
+
+        # Directly use the stage's invoke_url for endpoint_url
+        self.register_outputs(
+            {"gateway_id": self.gateway.id, "endpoint_url": self.endpoint_url}
         )
 
-    def deploy_lambda(self) -> PythonFunctionCloudprint:
+    def deploy_lambda(self) -> aws.lambda_.Function:
         api_maker_source = "/Users/clydedanielrepik/workspace/api_maker/src/api_maker"
 
         self.archive_builder = PythonArchiveBuilder(
@@ -49,11 +60,11 @@ class APIMaker(pulumi.ComponentResource):
                 "api_spec.yaml": self.api_spec,
                 "app.py": pkgutil.get_data("api_maker", "iac/handler.py").decode(
                     "utf-8"
-                ),  # noqa E501
+                ),
             },
             requirements=[
-                "psycopg2-binary",
                 "pyyaml",
+                "psycopg2-binary",
             ],
             working_dir="temp",
         )
@@ -99,41 +110,30 @@ class APIMaker(pulumi.ComponentResource):
             ),
         )
 
-        return lambda_function
+        return lambda_function.lambda_
 
-    def deploy_gateway(self, invoke_arn: str):
+    def deploy_gateway(self, function_invoke_arn):
         ModelFactory.load_yaml(self.props.get("api_spec"))
 
-        body = GatewaySpec(
-            function_name=self.function_name,
-            function_invoke_arn=invoke_arn,
-            enable_cors=True,
-        ).as_yaml()
-
-        if log.isEnabledFor(DEBUG):
-            write_logging_file(f"{self.name}-gateway-doc.yaml", body)
-
-        gateway = aws.apigateway.RestApi(
-            f"{self.name}-http-api",
-            name=f"{self.name}-http-api",
-            body=body,
+        return aws.apigateway.RestApi(
+            f"{self.name}-rest-api",
+            name=f"{self.name}-rest-api",
+            body=GatewaySpec(
+                function_name=self.function_name,
+                function_invoke_arn=function_invoke_arn,
+                enable_cors=True,
+            ).as_yaml(),
             fail_on_warnings=True,
         )
 
+    def deploy_stage(self):
         deployment = aws.apigateway.Deployment(
-            f"{self.name}-deployment", rest_api=gateway.id
+            f"{self.name}-deployment", rest_api=self.gateway.id
         )
 
-        stage = aws.apigateway.Stage(
+        return aws.apigateway.Stage(
             f"{self.name}-stage",
-            rest_api=gateway.id,
+            rest_api=self.gateway.id,
             deployment=deployment.id,
             stage_name="dev",
         )
-
-        pulumi.export("gateway-api", gateway.id)
-
-        endpoint = stage.invoke_url.apply(
-            lambda url: f"https://{gateway.id}.execute-api.{os.getenv('AWS_REGION')}.amazonaws.com/dev"  # noqa E501
-        )
-        pulumi.export("endpoint-url", endpoint)

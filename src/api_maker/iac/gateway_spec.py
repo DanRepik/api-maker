@@ -37,15 +37,15 @@ class GatewaySpec:
         document = ModelFactory.spec
 
         self.api_spec = dict(self.remove_custom_attributes(copy.deepcopy(document)))
-        self.fix_schema_names()
         if enable_cors:
             self.enable_cors()
 
         for schema_name in ModelFactory.get_schema_names():
-            fixed_schema_name = remove_non_alphanumeric(schema_name)
             self.generate_crud_operations(
-                fixed_schema_name, ModelFactory.get_schema_object(schema_name)
+                schema_name, ModelFactory.get_schema_object(schema_name)
             )
+
+        self.fix_schema_names()
 
     def as_json(self):
         return json.dumps(self.api_spec)
@@ -106,14 +106,13 @@ class GatewaySpec:
 
     def remove_object_or_array_types(self, d):
         """
-        Recursively remove items from the dictionary where the value
-        of 'type' is 'object' or 'array'.
+        Remove items from the dictionary where the value of 'type' is 'object' or 'array'.
 
         Args:
-        d (dict): The input dictionary to process.
+            d (dict): The input dictionary to process.
 
         Returns:
-        dict: The processed dictionary with the specified items removed.
+            dict: The processed dictionary with the specified items removed.
         """
         # Create a new dictionary to avoid modifying the input dictionary directly
         filtered_dict = {}
@@ -286,6 +285,7 @@ class GatewaySpec:
 
     def generate_crud_operations(self, schema_name, schema_object: SchemaObject):
         path = f"/{schema_name.lower()}"
+        log.info(f"xx path: {path}")
         self.generate_create_operation(path, schema_name, schema_object)
         self.generate_get_by_id_operation(path, schema_name, schema_object)
         self.generate_get_many_operation(path, schema_name, schema_object)
@@ -359,7 +359,7 @@ class GatewaySpec:
                 "summary": f"Retrieve {schema_name} by {key.name}",
                 "parameters": [
                     {
-                        "name": "id",
+                        "name": key.name,
                         "in": "path",
                         "description": f"ID of the {schema_name} to get",
                         "required": True,

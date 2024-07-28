@@ -32,7 +32,7 @@ def create_secret_if_not_exists(secret_name, secret_value):
 
 
 create_secret_if_not_exists(
-    "postgres/chinook",
+    "chinook/postgres",
     json.dumps(
         {
             "engine": "postgres",
@@ -44,7 +44,7 @@ create_secret_if_not_exists(
     ),
 )
 create_secret_if_not_exists(
-    "oracle/chinook",
+    "chinook/oracle",
     json.dumps(
         {
             "engine": "oracle",

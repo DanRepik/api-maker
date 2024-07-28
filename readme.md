@@ -744,13 +744,13 @@ This section provides instructions on how to use the `postgres_to_openapi` scrip
 
 #### Prerequisites
 
-- Python 3.x
-- `psycopg2-binary` library for PostgreSQL connectivity
+- Python 3.11
+- `psycopg` library for PostgreSQL connectivity
 - `pyyaml` library for YAML processing
 
 You can install the `api_maker` package and its dependencies using the following command:
 ```sh
-pip install api_maker psycopg2-binary
+pip install api_maker psycopg
 ```
 
 #### Script Overview

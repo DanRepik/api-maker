@@ -7,7 +7,7 @@ name = "pypi"
 api-maker = {file = ".", editable = true}
 boto3 = "*"
 pyyaml = "*"
-psycopg2-binary = "*"
+psycopg = "*"
 oracledb = "*"
 pytest-cov = "*"
 pulumi = "*"

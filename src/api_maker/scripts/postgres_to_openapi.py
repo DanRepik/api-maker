@@ -1,12 +1,12 @@
-import psycopg2
-import psycopg2.extras
+import psycopg
+import psycopg.extras
 import yaml
 import argparse
 
 
 class PostgresSchemaToOpenAPI:
     def __init__(self, host, database, user, password, schema="public"):
-        self.connection = psycopg2.connect(
+        self.connection = psycopg.connect(
             host=host, database=database, user=user, password=password
         )
         self.schema = schema
@@ -38,9 +38,7 @@ class PostgresSchemaToOpenAPI:
         FROM information_schema.columns AS c
         WHERE table_schema = %s AND table_name = %s
         """
-        with self.connection.cursor(
-            cursor_factory=psycopg2.extras.DictCursor
-        ) as cursor:
+        with self.connection.cursor(cursor_factory=psycopg.extras.DictCursor) as cursor:
             cursor.execute(query, (table_name, self.schema, self.schema, table_name))
             columns = cursor.fetchall()
         return columns
@@ -60,9 +58,7 @@ class PostgresSchemaToOpenAPI:
         AND tc.table_name = %s
         AND tc.table_schema = %s
         """
-        with self.connection.cursor(
-            cursor_factory=psycopg2.extras.DictCursor
-        ) as cursor:
+        with self.connection.cursor(cursor_factory=psycopg.extras.DictCursor) as cursor:
             cursor.execute(query, (table_name, self.schema))
             pks = cursor.fetchall()
 

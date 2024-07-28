@@ -121,44 +121,65 @@ class PythonFunctionCloudprint(pulumi.ComponentResource):
         log_group = self.create_log_group()
         execution_role = self.create_execution_role()
 
-        lambda_security_group = aws.ec2.SecurityGroup(
-            f"{self.name}-lambda-sg",
-            vpc_id=self.vpc_config["vpc_id"],
-            description="Allow Lambda to access the internet",
-            ingress=[
-                {
-                    "protocol": "-1",
-                    "from_port": 0,
-                    "to_port": 0,
-                    "cidr_blocks": ["0.0.0.0/0"],
-                }
-            ],
-            egress=[
-                {
-                    "protocol": "-1",  # Allow all outbound traffic
-                    "from_port": 0,
-                    "to_port": 0,
-                    "cidr_blocks": ["0.0.0.0/0"],
-                }
-            ],
-        )
+        if self.vpc_config:
+            lambda_security_group = aws.ec2.SecurityGroup(
+                f"{self.name}-lambda-sg",
+                vpc_id=self.vpc_config["vpc_id"],
+                description="Allow Lambda to access the internet",
+                ingress=[
+                    {
+                        "protocol": "-1",
+                        "from_port": 0,
+                        "to_port": 0,
+                        "cidr_blocks": ["0.0.0.0/0"],
+                    }
+                ],
+                egress=[
+                    {
+                        "protocol": "-1",  # Allow all outbound traffic
+                        "from_port": 0,
+                        "to_port": 0,
+                        "cidr_blocks": ["0.0.0.0/0"],
+                    }
+                ],
+            )
 
-        self.lambda_ = aws.lambda_.Function(
-            f"{self.name}-lambda",
-            code=pulumi.FileArchive(archive_location),
-            name=self.name,
-            role=execution_role.arn,
-            handler=self.handler,
-            memory_size=self.memory_size,
-            reserved_concurrent_executions=self.reserved_concurrent_executions,
-            timeout=self.timeout,
-            vpc_config=aws.lambda_.FunctionVpcConfigArgs(
-                subnet_ids=self.vpc_config["subnet_ids"],
-                security_group_ids=[lambda_security_group.id],
-            ),
-            source_code_hash=hash,
-            runtime=aws.lambda_.Runtime.PYTHON3D10,
-            environment=aws.lambda_.FunctionEnvironmentArgs(variables=self.environment),
-            opts=pulumi.ResourceOptions(depends_on=[execution_role, log_group]),
-            tags=self.tags,
-        )
+            self.lambda_ = aws.lambda_.Function(
+                f"{self.name}-lambda",
+                code=pulumi.FileArchive(archive_location),
+                name=self.name,
+                role=execution_role.arn,
+                handler=self.handler,
+                memory_size=self.memory_size,
+                reserved_concurrent_executions=self.reserved_concurrent_executions,
+                timeout=self.timeout,
+                vpc_config=aws.lambda_.FunctionVpcConfigArgs(
+                    subnet_ids=self.vpc_config["subnet_ids"],
+                    security_group_ids=[lambda_security_group.id],
+                ),
+                source_code_hash=hash,
+                runtime=aws.lambda_.Runtime.PYTHON3D9,
+                environment=aws.lambda_.FunctionEnvironmentArgs(
+                    variables=self.environment
+                ),
+                opts=pulumi.ResourceOptions(depends_on=[execution_role, log_group]),
+                tags=self.tags,
+            )
+        else:
+            self.lambda_ = aws.lambda_.Function(
+                f"{self.name}-lambda",
+                code=pulumi.FileArchive(archive_location),
+                name=self.name,
+                role=execution_role.arn,
+                handler=self.handler,
+                memory_size=self.memory_size,
+                reserved_concurrent_executions=self.reserved_concurrent_executions,
+                timeout=self.timeout,
+                source_code_hash=hash,
+                runtime=aws.lambda_.Runtime.PYTHON3D9,
+                environment=aws.lambda_.FunctionEnvironmentArgs(
+                    variables=self.environment
+                ),
+                opts=pulumi.ResourceOptions(depends_on=[log_group]),
+                tags=self.tags,
+            )
