@@ -12,7 +12,7 @@ ModelFactory.load_yaml(os.environ.get("API_SPEC", "/var/task/api_spec.yaml"))
 adapter = GatewayAdapter()
 
 
-def lambda_handler(event, _):
+def handler(event, _):
     log.debug(f"event: {event}")
     try:
         response = adapter.process_event(event)

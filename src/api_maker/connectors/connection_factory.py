@@ -21,8 +21,6 @@ class ConnectionFactory:
         specified engine and schema.
 
         Args:
-        - engine (str): The database engine type
-                ('postgres', 'oracle', or 'mysql').
         - schema (str): The schema for the database.
 
         Returns:

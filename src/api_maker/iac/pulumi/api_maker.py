@@ -9,7 +9,10 @@ from api_maker.utils.logger import logger, DEBUG, write_logging_file
 from api_maker.utils.model_factory import ModelFactory
 from api_maker.iac.gateway_spec import GatewaySpec
 from api_maker.cloudprints.python_archive_builder import PythonArchiveBuilder
-from api_maker.cloudprints.pulumi.lambda_ import PythonFunctionCloudprint
+from api_maker.cloudprints.pulumi.lambda_ import (
+    PythonFunctionCloudprint,
+    PythonFunctionCloudprintArgs,
+)
 
 log = logger(__name__)
 
@@ -79,19 +82,22 @@ class APIMaker(pulumi.ComponentResource):
                 }
             )
 
+        log.info(f"xx location: {self.archive_builder.location()}")
         lambda_function = PythonFunctionCloudprint(
             name=self.function_name,
-            hash=self.archive_builder.hash(),
-            handler="app.lambda_handler",
-            archive_location=self.archive_builder.location(),
-            environment=environment,
-            memory_size=self.props.get("memory_size", 128),
-            reserved_concurrent_executions=self.props.get(
-                "reserved_concurrent_executions", -1
+            args=PythonFunctionCloudprintArgs(
+                hash=self.archive_builder.hash(),
+                handler="app.handler",
+                archive_location=self.archive_builder.location(),
+                environment=environment,
+                memory_size=self.props.get("memory_size", 128),
+                reserved_concurrent_executions=self.props.get(
+                    "reserved_concurrent_executions", -1
+                ),
+                timeout=self.props.get("timeout", 30),
+                tags=self.props.get("tags", {}),
+                vpc_config=self.props.get("vpc_config", {}),
             ),
-            timeout=self.props.get("timeout", 30),
-            tags=self.props.get("tags", {}),
-            vpc_config=self.props.get("vpc_config", {}),
         )
 
         # Add permission for API Gateway to invoke the Lambda function

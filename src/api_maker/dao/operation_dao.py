@@ -64,7 +64,6 @@ class OperationDAO(DAO):
         """
 
         result = self.__fetch_record_set(self.sql_generator, cursor)
-        log.info(f"xx result: {result}")
 
         if self.operation.action == "read":
             if self.operation.metadata_params.get("count", False):

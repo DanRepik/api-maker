@@ -1,10 +1,35 @@
 import json
 import pulumi
 import pulumi_aws as aws
+from typing import Dict, Optional
 
 from api_maker.utils.logger import logger
 
 log = logger(__name__)
+
+
+class PythonFunctionCloudprintArgs:
+    def __init__(
+        self,
+        hash: str,
+        archive_location: str,
+        handler: str,
+        environment: Optional[Dict[str, str]] = None,
+        memory_size: int = 128,
+        reserved_concurrent_executions: int = -1,
+        timeout: int = 3,
+        tags: Optional[Dict[str, str]] = None,
+        vpc_config: Optional[Dict[str, pulumi.Input]] = None,
+    ):
+        self.hash = hash
+        self.archive_location = archive_location
+        self.handler = handler
+        self.environment = environment or {}
+        self.memory_size = memory_size
+        self.reserved_concurrent_executions = reserved_concurrent_executions
+        self.timeout = timeout
+        self.tags = tags
+        self.vpc_config = vpc_config
 
 
 class PythonFunctionCloudprint(pulumi.ComponentResource):
@@ -15,30 +40,17 @@ class PythonFunctionCloudprint(pulumi.ComponentResource):
     def __init__(
         self,
         name: str,
-        hash: str,
-        archive_location: str,
-        handler: str,
-        environment: dict = None,
-        memory_size: int = 128,
-        reserved_concurrent_executions: int = -1,
-        timeout: int = 3,
-        tags: dict = None,
-        vpc_config: dict = None,
+        args: PythonFunctionCloudprintArgs,
         opts: pulumi.ResourceOptions = None,
     ):
         super().__init__("custom:resource:PythonFunctionCloudprint", name, {}, opts)
         self.name = name
-        self.handler = handler
-        self.environment = environment or {}
-        self.memory_size = memory_size
-        self.reserved_concurrent_executions = reserved_concurrent_executions
-        self.timeout = timeout
-        self.tags = tags
-        self.vpc_config = vpc_config
-        self.create_lambda_function(hash, archive_location)
+        self.args = args
+        self.create_lambda_function()
         self.register_outputs({})
 
     def create_execution_role(self) -> aws.iam.Role:
+        log.info(f"{self.name} creating execution role")
         assume_role_policy = aws.iam.get_policy_document(
             statements=[
                 aws.iam.GetPolicyDocumentStatementArgs(
@@ -57,8 +69,9 @@ class PythonFunctionCloudprint(pulumi.ComponentResource):
         role = aws.iam.Role(
             f"{self.name}-lambda-execution",
             assume_role_policy=assume_role_policy.json,
-            tags=self.tags,
+            tags=self.args.tags,
         )
+        log.info(f"{self.name} creating execution role 1")
 
         aws.iam.RolePolicy(
             f"{self.name}-lambda-policy",
@@ -99,15 +112,17 @@ class PythonFunctionCloudprint(pulumi.ComponentResource):
                 )
             ),
         )
+        log.info(f"{self.name} creating execution role policy")
 
         return role
 
     def create_log_group(self) -> aws.cloudwatch.LogGroup:
+        log.info(f"{self.name} creating log group")
         log_group = aws.cloudwatch.LogGroup(
             f"{self.name}-log-group",
             name=f"/aws/lambda/{pulumi.get_project()}-{self.name}",
             retention_in_days=3,
-            tags=self.tags,
+            tags=self.args.tags,
         )
         return log_group
 
@@ -115,16 +130,18 @@ class PythonFunctionCloudprint(pulumi.ComponentResource):
     def invoke_arn(self) -> pulumi.Output[str]:
         return self.lambda_.invoke_arn
 
-    def create_lambda_function(self, hash: str, archive_location: str):
-        log.debug("Creating lambda function")
+    def create_lambda_function(self):
+        log.info(f"{self.name} creating lambda function")
 
         log_group = self.create_log_group()
         execution_role = self.create_execution_role()
+        log.info(f"{self.name} creating role done")
 
-        if self.vpc_config:
+        if self.args.vpc_config:
+            log.info(f"{self.name} creating lambda vpc")
             lambda_security_group = aws.ec2.SecurityGroup(
                 f"{self.name}-lambda-sg",
-                vpc_id=self.vpc_config["vpc_id"],
+                vpc_id=self.args.vpc_config["vpc_id"],
                 description="Allow Lambda to access the internet",
                 ingress=[
                     {
@@ -146,40 +163,40 @@ class PythonFunctionCloudprint(pulumi.ComponentResource):
 
             self.lambda_ = aws.lambda_.Function(
                 f"{self.name}-lambda",
-                code=pulumi.FileArchive(archive_location),
+                code=pulumi.FileArchive(self.args.archive_location),
                 name=self.name,
                 role=execution_role.arn,
-                handler=self.handler,
-                memory_size=self.memory_size,
-                reserved_concurrent_executions=self.reserved_concurrent_executions,
-                timeout=self.timeout,
+                handler=self.args.handler,
+                memory_size=self.args.memory_size,
+                reserved_concurrent_executions=self.args.reserved_concurrent_executions,
+                timeout=self.args.timeout,
                 vpc_config=aws.lambda_.FunctionVpcConfigArgs(
-                    subnet_ids=self.vpc_config["subnet_ids"],
-                    security_group_ids=[lambda_security_group.id],
+                    subnet_ids=self.args.vpc_config["subnet_ids"],
+                    security_group_ids=self.args.vpc_config["security_group_ids"],
                 ),
-                source_code_hash=hash,
+                source_code_hash=self.args.hash,
                 runtime=aws.lambda_.Runtime.PYTHON3D9,
                 environment=aws.lambda_.FunctionEnvironmentArgs(
-                    variables=self.environment
+                    variables=self.args.environment
                 ),
                 opts=pulumi.ResourceOptions(depends_on=[execution_role, log_group]),
-                tags=self.tags,
+                tags=self.args.tags,
             )
         else:
             self.lambda_ = aws.lambda_.Function(
                 f"{self.name}-lambda",
-                code=pulumi.FileArchive(archive_location),
+                code=pulumi.FileArchive(self.args.archive_location),
                 name=self.name,
                 role=execution_role.arn,
-                handler=self.handler,
-                memory_size=self.memory_size,
-                reserved_concurrent_executions=self.reserved_concurrent_executions,
-                timeout=self.timeout,
-                source_code_hash=hash,
+                handler=self.args.handler,
+                memory_size=self.args.memory_size,
+                reserved_concurrent_executions=self.args.reserved_concurrent_executions,
+                timeout=self.args.timeout,
+                source_code_hash=self.args.hash,
                 runtime=aws.lambda_.Runtime.PYTHON3D9,
                 environment=aws.lambda_.FunctionEnvironmentArgs(
-                    variables=self.environment
+                    variables=self.args.environment
                 ),
                 opts=pulumi.ResourceOptions(depends_on=[log_group]),
-                tags=self.tags,
+                tags=self.args.tags,
             )

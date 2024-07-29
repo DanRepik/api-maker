@@ -16,16 +16,16 @@
 /*******************************************************************************
    Drop database if it exists
 ********************************************************************************/
-DROP DATABASE IF EXISTS chinook_auto_increment;
+-- DROP DATABASE IF EXISTS chinook_auto_increment;
 
 
 /*******************************************************************************
    Create database
 ********************************************************************************/
-CREATE DATABASE chinook_auto_increment;
+-- CREATE DATABASE chinook_auto_increment;
 
 
-\c chinook_auto_increment;
+-- \c chinook_auto_increment;
 
 
 /*******************************************************************************

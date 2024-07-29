@@ -285,7 +285,6 @@ class GatewaySpec:
 
     def generate_crud_operations(self, schema_name, schema_object: SchemaObject):
         path = f"/{schema_name.lower()}"
-        log.info(f"xx path: {path}")
         self.generate_create_operation(path, schema_name, schema_object)
         self.generate_get_by_id_operation(path, schema_name, schema_object)
         self.generate_get_many_operation(path, schema_name, schema_object)

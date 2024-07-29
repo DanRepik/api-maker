@@ -1,76 +1,33 @@
 import os
+import pathlib
 
 import pulumi
 import pulumi_aws as aws
 
 from pulumi import ComponentResource, ResourceOptions
+from api_maker.utils.logger import logger
 from api_maker.cloudprints.python_archive_builder import PythonArchiveBuilder
+from api_maker.cloudprints.pulumi.lambda_ import (
+    PythonFunctionCloudprint,
+    PythonFunctionCloudprintArgs,
+)
 
-handler = """
-import os
-import boto3
-import psycopg2
-
-def handler(event, context):
-    # Initialize S3 client
-    s3_client = boto3.client('s3')
-
-    # Retrieve the list of SQL files from the S3 bucket
-    response = s3_client.list_objects_v2(Bucket=os.getenv('BUCKET_NAME'))
-    sql_files = [obj['Key'] for obj in response.get('Contents', []) if obj['Key'].endswith('.sql')]
-
-    # Connect to the PostgreSQL database
-    conn = psycopg2.connect(
-        host=os.getenv('RDS_HOST'),
-        port=os.getenv('RDS_PORT', 5432),
-        user=os.getenv('RDS_USER'),
-        password=os.getenv('RDS_PASSWORD'),
-        dbname=os.getenv('RDS_DB_NAME')
-    )
-    conn.autocommit = True
-    cur = conn.cursor()
-
-    # Execute each SQL file
-    for sql_file in sql_files:
-        print(f"Processing file: {sql_file}")
-        obj = s3_client.get_object(Bucket=os.getenv('BUCKET_NAME'), Key=sql_file)
-        sql_content = obj['Body'].read().decode('utf-8')
-
-        try:
-            cur.execute(sql_content)
-            print(f"Executed {sql_file} successfully")
-        except Exception as e:
-            print(f"Error executing {sql_file}: {e}")
-
-    # Close the database connection
-    cur.close()
-    conn.close()
-
-    return {
-        'statusCode': 200,
-        'body': 'SQL scripts executed successfully'
-    }
-"""
+log = logger(__name__)
 
 
 class PostgresInitializerArgs:
     def __init__(
         self,
-        sql_folder: str,
-        bucket_name: str,
-        rds_host: str,
-        rds_port: int,
-        rds_username: str,
-        rds_password: str,
-        rds_db_name: str,
+        *,
+        secrets: dict[str, str],
+        database: str,
+        vpc_config=None,
+        tags: dict[str, str] = None,
     ):
-        self.sql_folder = sql_folder
-        self.bucket_name = bucket_name
-        self.rds_host = rds_host
-        self.rds_port = rds_port
-        self.rds_username = rds_username
-        self.rds_password = rds_password
-        self.rds_db_name = rds_db_name
+        self.secrets = secrets
+        self.database = database
+        self.vpc_config = vpc_config
+        self.tags = tags
 
 
 class PostgresInitializer(ComponentResource):
@@ -79,6 +36,71 @@ class PostgresInitializer(ComponentResource):
     ):
         super().__init__("custom:resource:PostgresInitializer", name, {}, opts)
 
+        log.info("postgres initializer")
+        self.name = name
+        self.args = args
+        lambda_function = self.deploy_lambda()
+
+        # Invoke the Lambda function
+        lambda_invocation = aws.lambda_.Invocation(
+            f"{name}-lambda-invocation",
+            function_name=lambda_function.name,
+            input="",
+            opts=ResourceOptions(parent=lambda_function),
+        )
+
+    def deploy_lambda(self) -> aws.lambda_.Function:
+        api_maker_source = "/Users/clydedanielrepik/workspace/api_maker/src/api_maker"
+
+        self.archive_builder = PythonArchiveBuilder(
+            name=f"{self.name}-archive-builder",
+            sources={
+                "api_maker": api_maker_source,
+                "sql/chinook.sql": f"{pathlib.Path.home()}/workspace/api_maker/dev_playground/postgres/Chinook_Postgres.sql",
+                "app.py": "initializer_handler.py",
+            },
+            requirements=[
+                "psycopg2-binary",
+            ],
+            working_dir="temp",
+        )
+
+        log.debug("archive built")
+
+        environment = {"SECRETS": self.args.secrets, "DATABASE": self.args.database}
+        if os.environ.get("AWS_PROFILE") == "localstack":
+            environment.update(
+                {
+                    "AWS_ACCESS_KEY_ID": "test",
+                    "AWS_SECRET_ACCESS_KEY": "test",
+                    "AWS_ENDPOINT_URL": "http://localstack:4566",
+                }
+            )
+
+        lambda_function = PythonFunctionCloudprint(
+            name=self.name,
+            args=PythonFunctionCloudprintArgs(
+                hash=self.archive_builder.hash(),
+                handler="app.handler",
+                archive_location=self.archive_builder.location(),
+                environment=environment,
+                timeout=60,
+                tags=self.args.tags or {},
+                vpc_config={
+                    "vpc_id": "vpc-03d0b5f08f120f57c",
+                    "security_group_ids": ["sg-07efca72d1041f9f3"],
+                    "subnet_ids": [
+                        "subnet-0deb799cdd3bc90d7",
+                        "subnet-02b4eaee27ddd71c4",
+                    ],
+                },
+            ),
+        )
+
+        return lambda_function.lambda_
+
+
+"""
         # Create an S3 bucket
         bucket = aws.s3.Bucket(args.bucket_name, opts=ResourceOptions(parent=self))
 
@@ -98,7 +120,7 @@ class PostgresInitializer(ComponentResource):
         # Create a Lambda role
         lambda_role = aws.iam.Role(
             f"{name}-lambda-role",
-            assume_role_policy="""{
+            assume_role_policy={
                 "Version": "2012-10-17",
                 "Statement": [
                     {
@@ -110,7 +132,7 @@ class PostgresInitializer(ComponentResource):
                         "Sid": ""
                     }
                 ]
-            }""",
+            },
             opts=ResourceOptions(parent=self),
         )
 
@@ -118,7 +140,7 @@ class PostgresInitializer(ComponentResource):
             f"{name}-lambda-policy",
             role=lambda_role.id,
             policy=bucket.arn.apply(
-                lambda bucket_arn: f"""{{
+                lambda bucket_arn: f{{
                 "Version": "2012-10-17",
                 "Statement": [
                     {{
@@ -129,6 +151,15 @@ class PostgresInitializer(ComponentResource):
                             "logs:PutLogEvents",
                         ],
                         "Resource": "arn:aws:logs:*:*:*",
+                    }},
+                    {{
+                        "Effect": "Allow",
+                        "Action": [
+                            "ec2:CreateNetworkInterface",
+                            "ec2:DescribeNetworkInterfaces",
+                            "ec2:DeleteNetworkInterface",
+                        ],
+                        "Resource": "*",
                     }},
                     {{
                         "Effect": "Allow",
@@ -145,7 +176,7 @@ class PostgresInitializer(ComponentResource):
                         "Resource": "*"
                     }}
                 ]
-            }}"""
+            }}
             ),
             opts=ResourceOptions(parent=lambda_role),
         )
@@ -206,3 +237,4 @@ class PostgresInitializer(ComponentResource):
                 "lambda_function_arn": self.lambda_function_arn,
             }
         )
+"""

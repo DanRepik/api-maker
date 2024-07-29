@@ -5,7 +5,6 @@ import json
 from vpc import VpcComponent
 from postgres_secret import PostgresSecret, PostgresSecretArgs
 from rds_postgres import RdsPostgres, RdsPostgresArgs
-from postgres_initializer import PostgresInitializer, PostgresInitializerArgs
 
 # Configuration settings
 config = pulumi.Config()
@@ -50,19 +49,7 @@ postgres_secret = PostgresSecret(
 )
 
 pulumi.export("secret_version_arn", postgres_secret.secret_version_arn)
-
-initializer = PostgresInitializer(
-    "postgres-initializer",
-    PostgresInitializerArgs(
-        sql_folder=sql_folder,
-        bucket_name=bucket_name,
-        rds_host=rds_postgres.rds_instance_endpoint,
-        rds_port=5432,
-        rds_username=db_username,
-        rds_password=db_password,
-        rds_db_name=db_name,
-    ),
-)
-
-pulumi.export("bucket_name", initializer.bucket_name)
-pulumi.export("lambda_function_arn", initializer.lambda_function_arn)
+pulumi.export("vpc_id", vpc.vpc.id)
+pulumi.export("security_group", vpc.security_group.id)
+pulumi.export("public_subnet_1", vpc.public_subnet1.id)
+pulumi.export("public_subnet_2", vpc.public_subnet2.id)

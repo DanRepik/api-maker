@@ -132,7 +132,6 @@ class SQLSelectGenerator(SQLGenerator):
         self.__selection_result_map = {}
 
         for relation, reg_exs in self.get_regex_map(filter_str).items():
-            log.info(f"xx relation: {relation}, reg_exs: {reg_exs}")
             # Extract the schema object for the current entity
             relation_property = self.schema_object.relations.get(relation)
 
@@ -164,7 +163,6 @@ class SQLSelectGenerator(SQLGenerator):
             # Extend the result map with the filtered keys
             self.__selection_result_map.update(filtered_keys)
 
-        log.debug(f"xx select_list_map: {self.__selection_result_map}")
         return self.__selection_result_map
 
     def get_regex_map(self, filter_str: str) -> dict[str, list]:
@@ -226,7 +224,6 @@ class SQLSelectGenerator(SQLGenerator):
 
             # handle entity prefix
             field_parts = field_name.split(".")
-            log.info(f"xx field_parts: {field_parts}")
             if len(field_parts) == 1:
                 prefix = self.prefix_map["$default$"]
                 property = self.schema_object.properties.get(field_parts[0])
@@ -297,11 +294,9 @@ class SQLSelectGenerator(SQLGenerator):
     @property
     def offset_expression(self) -> str:
         offset_str = self.operation.metadata_params.get("offset", None)
-        log.debug(f"xx offset: {offset_str}")
         if not offset_str:
             return ""
 
-        log.debug(f"xxx offset: {offset_str}")
         if isinstance(offset_str, str) and not offset_str.isdigit():
             raise ApplicationException(
                 400, f"Offset is not an valid integer {offset_str}"
