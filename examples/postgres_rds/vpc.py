@@ -143,7 +143,7 @@ class VpcComponent(pulumi.ComponentResource):
             vpc_id=self.vpc.id,
             service_name="com.amazonaws.us-east-1.secretsmanager",
             vpc_endpoint_type="Interface",
-            subnet_ids=[self.private_subnet1.id, self.private_subnet2.id],
+            subnet_ids=[self.public_subnet1.id, self.public_subnet2.id],
             security_group_ids=[self.security_group.id],
         )
 

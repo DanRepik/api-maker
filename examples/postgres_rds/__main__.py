@@ -1,7 +1,5 @@
 import pulumi
-import pulumi_aws as aws
 from pathlib import Path
-import json
 from vpc import VpcComponent
 from postgres_secret import PostgresSecret, PostgresSecretArgs
 from rds_postgres import RdsPostgres, RdsPostgresArgs
@@ -50,6 +48,8 @@ postgres_secret = PostgresSecret(
 
 pulumi.export("secret_version_arn", postgres_secret.secret_version_arn)
 pulumi.export("vpc_id", vpc.vpc.id)
-pulumi.export("security_group", vpc.security_group.id)
+pulumi.export("security_group", rds_postgres.rds_security_group_id)
 pulumi.export("public_subnet_1", vpc.public_subnet1.id)
 pulumi.export("public_subnet_2", vpc.public_subnet2.id)
+pulumi.export("private_subnet_1", vpc.private_subnet1.id)
+pulumi.export("private_subnet_2", vpc.private_subnet2.id)
